@@ -221,6 +221,10 @@ h1 em { font-style: normal; color: var(--gold); }
 .rules { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .rules li { display: flex; gap: 10px; align-items: flex-start; line-height: 1.6; font-size: .98rem; }
 .rules svg { flex: none; width: 22px; height: 22px; margin-top: 2px; }
+.voice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: .9rem; }
+.voice-row label { font-weight: 700; }
+.voice-row select { font: inherit; font-size: 16px; min-height: 44px; border-radius: 12px; border: 2px solid var(--line); background: var(--white); color: var(--ink); padding: 0 10px; max-width: 100%; }
+.voice-row .muted { flex-basis: 100%; font-size: .82rem; line-height: 1.5; }
 .note { font-size: .88rem; line-height: 1.6; color: var(--bad); margin: 0; }
 
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -694,6 +698,11 @@ h1 em { font-style: normal; color: var(--gold); }
           <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 17l-6.1 3.4 1.5-6.8L2.2 9l6.9-.7z" fill="#2753A6"></path></svg><span>每題跟上次的自己比，寫得比上次快，就得到一顆快速星星。</span></li>
         </ul>
         <p class="note" id="voiceNote" hidden></p>
+        <div class="voice-row" id="voiceRow" hidden>
+          <label for="voiceSel">唸題的聲音</label>
+          <select id="voiceSel"></select>
+          <span class="muted">選有「台灣」的；「美佳（加強版）」最清楚。在 iPad「設定 → 輔助使用 → 朗讀內容 → 聲音 → 中文（台灣）」可以下載。</span>
+        </div>
         <div class="row">
           <button class="btn btn-ghost" type="button" id="btnTest"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"></path><path d="M16 8.5a5 5 0 010 7M18.5 6a8.5 8.5 0 010 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>試聽聲音</button>
           <button class="btn btn-ghost" type="button" id="btnBook">貼紙冊 <b id="bookBadge">0/18</b></button>
@@ -906,7 +915,7 @@ h1 em { font-style: normal; color: var(--gold); }
     { id: 16, w: '阻斷', m: '因阻礙而中斷。', s: ['這場大雪', '了小鎮與外界的聯繫。'] },
     { id: 17, w: '孵育', m: '蟲、魚、鳥等類動物的卵，以自然或人工方式使胚胎發育成為幼體。', s: ['自然界中', '下一代的，不一定是由雌性負責。'] },
     { id: 18, w: '歷盡', m: '經歷遍盡。', s: ['他在逆境中', '艱辛，終於有屬於自己的一片天。'] },
-    { id: 19, w: '應接不暇', m: '形容景物繁多，來不及觀賞。亦比喻事情繁忙，難以應付。', s: ['這幾天伴手禮店擠滿了顧客，讓服務人員', '。'] },
+    { id: 19, w: '應接不暇', say: '英接不暇', m: '形容景物繁多，來不及觀賞。亦比喻事情繁忙，難以應付。', s: ['這幾天伴手禮店擠滿了顧客，讓服務人員', '。'] },
     { id: 20, w: '微乎其微', m: '形容非常少或事物極其細小。', s: ['這種病痊癒的機率', '，他卻奇蹟似痊癒。'] },
     { id: 21, w: '腹背受敵', m: '前、後都受到敵人的攻擊。', s: ['軍隊在山谷中迷路，陷入', '的困境。'] },
     { id: 22, w: '悲天憫人', m: '憂傷時局多變，哀憐百姓疾苦。', s: ['正因為他有', '的胸懷，大家都很尊敬他。'] },
@@ -1126,11 +1135,34 @@ h1 em { font-style: normal; color: var(--gold); }
     if (!canSpeak) return;
     let vs = [];
     try { vs = window.speechSynthesis.getVoices() || []; } catch (e) {}
-    zhVoice = vs.find(function (v) { return /^zh[-_]TW/i.test(v.lang); })
-      || vs.find(function (v) { return /^(zh[-_]CN|cmn)/i.test(v.lang); })
-      || vs.find(function (v) { return /^zh/i.test(v.lang) && !/HK|yue/i.test(v.lang); })
-      || null;
-    if (vs.length && !zhVoice) showVoiceNote('這台裝置沒有找到中文語音，唸出來可能不清楚。可以在裝置的語音設定裡加裝「中文（台灣）」語音。');
+    /* Taiwan Mandarin first, enhanced/premium voices first; a voice picked in the menu wins */
+    const zh = vs.filter(function (v) { return /^(zh|cmn)/i.test(v.lang) && !/HK|yue/i.test(v.lang); });
+    const score = function (v) {
+      let n = 0;
+      if (/^zh[-_]TW|Hant/i.test(v.lang)) n += 100;
+      if (/美佳|mei-?jia/i.test(v.name)) n += 30;
+      if (/enhanced|premium|加強|高音質|進階/i.test(v.name + ' ' + (v.voiceURI || ''))) n += 20;
+      if (/^zh[-_]CN/i.test(v.lang)) n -= 20;
+      if (/Grandpa|Grandma|Eddy|Flo|Reed|Rocko|Sandy|Shelley|爺爺|奶奶/i.test(v.name)) n -= 40;
+      return n;
+    };
+    zh.sort(function (a, b) { return score(b) - score(a); });
+    const saved = store.get('voice-name');
+    zhVoice = zh.find(function (v) { return v.name === saved; }) || zh[0] || null;
+    const sel = $('voiceSel');
+    if (sel) {
+      sel.textContent = '';
+      zh.forEach(function (v) {
+        const o = document.createElement('option');
+        o.value = v.name;
+        o.textContent = v.name + (/^zh[-_]TW/i.test(v.lang) ? '（台灣）' : /^zh[-_]CN/i.test(v.lang) ? '（大陸）' : '');
+        if (zhVoice && v.name === zhVoice.name) o.selected = true;
+        sel.appendChild(o);
+      });
+      $('voiceRow').hidden = zh.length < 1;
+    }
+    const twGood = zhVoice && /^zh[-_]TW/i.test(zhVoice.lang);
+    if (vs.length && !twGood) showVoiceNote('這台 iPad 沒有台灣口音的語音，唸起來可能不標準。請到「設定 → 輔助使用 → 朗讀內容 → 聲音 → 中文（台灣）」下載「美佳（加強版）」，再回來這裡選它。');
   }
   function showVoiceNote(t) { const n = $('voiceNote'); n.textContent = t; n.hidden = false; }
   if (canSpeak) {
@@ -2344,6 +2376,12 @@ h1 em { font-style: normal; color: var(--gold); }
   });
   ['modeSentence', 'modeDict', 'modeMeaning'].forEach(function (id) {
     $(id).addEventListener('click', function () { S.mode = this.getAttribute('data-mode'); renderStart(); });
+  });
+  $('voiceSel').addEventListener('change', function () {
+    store.set('voice-name', this.value);
+    loadVoices();
+    unlockAudio();
+    speakSeq([{ t: '你好，我會用這個聲音唸題目。' }], false);
   });
   $('btnTest').addEventListener('click', function () {
     unlockAudio();
